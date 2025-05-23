@@ -736,7 +736,8 @@ class Trainer1D(object):
         amp = False,
         mixed_precision_type = 'fp16',
         split_batches = True,
-        max_grad_norm = 1.
+        max_grad_norm = 1.,
+        num_workers = 1,
     ):
         super().__init__()
 
@@ -766,7 +767,7 @@ class Trainer1D(object):
 
         # dataset and dataloader
 
-        dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
+        dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = num_workers)
 
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)

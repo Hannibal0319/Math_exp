@@ -98,13 +98,17 @@ def load_graphs(filename="graphs.txt"):
     graphs = []
     with open(filename, "r") as f:
         for line in f:
-            graph = []
+            graph = [[]]
+            idx=0
             for char in line.strip():
                 if char == '1':
-                    graph.append(1)
+                    graph[idx].append(1)
                 elif char == '0':
-                    graph.append(0)
-            graphs.append(np.array(graph).reshape(-1, len(graph)))
+                    graph[idx].append(0)
+                else:
+                    idx+=1
+                    graph.append([])
+            graphs.append(np.array(graph).reshape(1,len(graph)* len(graph)))
     return graphs
 
 def main():
