@@ -113,15 +113,16 @@ def load_graphs(filename="graphs.txt"):
 
 def main():
     # Generate and print graphs
+    num_graphs = 3000  # Number of graphs to generate
     N=20
-    graphs = generate_graphs(num_graphs=20, n=N)
+    graphs = generate_graphs(num_graphs=num_graphs, n=N)
     for idx, g in enumerate(graphs):
         print(f"Graph {idx + 1}:")
         print_graph(g)
     
     # Save the graphs to a file
     
-    save_graphs(graphs, filename= f"triangle_free_graphs/graphs_{N}.txt")
+    save_graphs(graphs, filename= f"triangle_free_graphs/graphs_{N}_num{num_graphs}.txt")
     
     
 

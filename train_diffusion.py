@@ -20,7 +20,7 @@ diffusion = GaussianDiffusion1D(
 
 if __name__ == "__main__":
     
-    graphs = load_graphs("triangle_free_graphs/graphs_20.txt")
+    graphs = load_graphs("triangle_free_graphs\graphs_20_num3000.txt")
     training_seq = torch.Tensor(np.array(graphs))
     print(training_seq.shape, training_seq[0].dtype,training_seq[0].device)
 
