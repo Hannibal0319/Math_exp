@@ -346,7 +346,7 @@ class Unet1D(Module):
         self.final_res_block = resnet_block(init_dim * 2, init_dim)
         self.final_conv = nn.Conv1d(init_dim, self.out_dim, 1)
 
-    def forward(self, x, time, x_self_cond = None):
+    def forward(self, x, time, x_self_cond = None,return_h = False):
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x_self_cond, x), dim = 1)
@@ -385,7 +385,10 @@ class Unet1D(Module):
         x = torch.cat((x, r), dim = 1)
 
         x = self.final_res_block(x, t)
-        return self.final_conv(x)
+        out = self.final_conv(x)
+        if return_h:
+            return out, h
+        return out
 
 # gaussian diffusion trainer class
 
@@ -539,30 +542,31 @@ class GaussianDiffusion1D(Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
-        model_output = self.model(x, t, x_self_cond)
+    def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False, return_h=False):
+        if return_h:
+            model_output, h = self.model(x, t, x_self_cond, return_h=True)
+        else:
+            model_output = self.model(x, t, x_self_cond)
+            h = None
         maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
 
         if self.objective == 'pred_noise':
             pred_noise = model_output
             x_start = self.predict_start_from_noise(x, t, pred_noise)
             x_start = maybe_clip(x_start)
-
             if clip_x_start and rederive_pred_noise:
                 pred_noise = self.predict_noise_from_start(x, t, x_start)
-
         elif self.objective == 'pred_x0':
             x_start = model_output
             x_start = maybe_clip(x_start)
             pred_noise = self.predict_noise_from_start(x, t, x_start)
-
         elif self.objective == 'pred_v':
             v = model_output
             x_start = self.predict_start_from_v(x, t, v)
             x_start = maybe_clip(x_start)
             pred_noise = self.predict_noise_from_start(x, t, x_start)
 
-        return ModelPrediction(pred_noise, x_start)
+        return ModelPrediction(pred_noise, x_start), h
 
     def p_mean_variance(self, x, t, x_self_cond = None, clip_denoised = True):
         preds = self.model_predictions(x, t, x_self_cond)
@@ -639,6 +643,26 @@ class GaussianDiffusion1D(Module):
         seq_length, channels = self.seq_length, self.channels
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
         return sample_fn((batch_size, channels, seq_length))
+    
+    @torch.no_grad()
+    def sample_with_h(self, batch_size=16):
+        seq_length, channels = self.seq_length, self.channels
+        shape = (batch_size, channels, seq_length)
+        img = torch.randn(shape, device=self.betas.device)
+        x_start = None
+        h_spaces = []
+
+        for t in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
+            self_cond = x_start if self.self_condition else None
+            # Get model output and h-space
+            (pred_noise, x_start), h = self.model_predictions(img, torch.full((batch_size,), t, device=img.device, dtype=torch.long), self_cond, return_h=True)
+            h_spaces.append(h)
+            model_mean, _, model_log_variance, _ = self.p_mean_variance(img, torch.full((batch_size,), t, device=img.device, dtype=torch.long), self_cond)
+            noise = torch.randn_like(img) if t > 0 else 0.
+            img = model_mean + (0.5 * model_log_variance).exp() * noise
+
+        img = self.unnormalize(img)
+        return img, h_spaces
 
     @torch.no_grad()
     def interpolate(self, x1, x2, t = None, lam = 0.5):
