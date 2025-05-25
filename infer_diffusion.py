@@ -25,7 +25,7 @@ diffusion = GaussianDiffusion1D(
     timesteps = 1000,
     objective = 'pred_v'
 )
-diffusion.load_state_dict(torch.load("results/model-7.pt")["model"])
+diffusion.load_state_dict(torch.load("results/model-4.pt")["model"])
 
 if __name__ == "__main__":
     args = parse_args()
