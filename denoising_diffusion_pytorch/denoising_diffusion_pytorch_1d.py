@@ -569,7 +569,7 @@ class GaussianDiffusion1D(Module):
         return ModelPrediction(pred_noise, x_start), h
 
     def p_mean_variance(self, x, t, x_self_cond = None, clip_denoised = True):
-        preds = self.model_predictions(x, t, x_self_cond)
+        preds,_ = self.model_predictions(x, t, x_self_cond)
         x_start = preds.pred_x_start
 
         if clip_denoised:
@@ -655,7 +655,8 @@ class GaussianDiffusion1D(Module):
         for t in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
             self_cond = x_start if self.self_condition else None
             # Get model output and h-space
-            (pred_noise, x_start), h = self.model_predictions(img, torch.full((batch_size,), t, device=img.device, dtype=torch.long), self_cond, return_h=True)
+            model_pred, h = self.model_predictions(img, torch.full((batch_size,), t, device=img.device, dtype=torch.long), self_cond, return_h=True)
+            pred_noise, x_start = model_pred.pred_noise, model_pred.pred_x_start
             h_spaces.append(h)
             model_mean, _, model_log_variance, _ = self.p_mean_variance(img, torch.full((batch_size,), t, device=img.device, dtype=torch.long), self_cond)
             noise = torch.randn_like(img) if t > 0 else 0.
@@ -663,6 +664,32 @@ class GaussianDiffusion1D(Module):
 
         img = self.unnormalize(img)
         return img, h_spaces
+    
+    @torch.no_grad()
+    def p_sample_from_h(self, h, t: int, x_self_cond = None, clip_denoised = True):
+        b, *_, device = *h[0].shape, h[0].device
+        batched_times = torch.full((b,), t, device = device, dtype = torch.long)
+        x = h[-1]
+        for i in reversed(range(len(h) - 1)):
+            x = torch.cat((x, h[i]), dim = 1)
+            model_mean, _, model_log_variance, x_start = self.p_mean_variance(x = x, t = batched_times, x_self_cond = x_self_cond, clip_denoised = clip_denoised)
+            noise = torch.randn_like(x) if t > 0 else 0.
+            pred_img = model_mean + (0.5 * model_log_variance).exp() * noise
+        x_start = None
+        for i in tqdm(reversed(range(0, t)), desc = 'sampling loop time step', total = t):
+            self_cond = x_start if self.self_condition else None
+            pred_img, x_start = self.p_sample(pred_img, i, self_cond, clip_denoised)
+        return pred_img
+    
+    @torch.no_grad()
+    def sample_from_h(self, h, batch_size = 16):
+        """
+        Sample from the h-space of the model.
+        h is a list of hidden states from the model, where each element corresponds to a different time step.
+        """
+        seq_length, channels = self.seq_length, self.channels
+        assert len(h) == self.num_timesteps, f'h must have length {self.num_timesteps}, got {len(h)}'
+        return self.p_sample_from_h(h, t = self.num_timesteps - 1, x_self_cond = None)
 
     @torch.no_grad()
     def interpolate(self, x1, x2, t = None, lam = 0.5):

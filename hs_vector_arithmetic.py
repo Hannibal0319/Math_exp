@@ -1,41 +1,7 @@
 import torch
 from denoising_diffusion_pytorch import Unet1D,GaussianDiffusion1D
 from count_triangles import triangleInGraph
-
-def get_bottleneck(model, x, t):
-    # Forward up to bottleneck (after mid_block2)
-    x = model.init_conv(x)
-    t_emb = model.time_mlp(t)
-    h = []
-    for block1, block2, attn, downsample in model.downs:
-        x = block1(x, t_emb)
-        h.append(x)
-        x = block2(x, t_emb)
-        x = attn(x)
-        h.append(x)
-        x = downsample(x)
-    x = model.mid_block1(x, t_emb)
-    x = model.mid_attn(x)
-    x = model.mid_block2(x, t_emb)
-    return x
-
-def decode_from_bottleneck(model, bottleneck, t):
-    # Only upsampling path, no skip connections
-    x = bottleneck
-    t_emb = model.time_mlp(t)
-    for block1, block2, attn, upsample in model.ups:
-        skip = torch.zeros_like(x)
-        x = torch.cat((x, skip), dim=1)
-        x = block1(x, t_emb)
-        x = torch.cat((x, skip), dim=1)
-        x = block2(x, t_emb)
-        x = attn(x)
-        x = upsample(x)
-    r = torch.zeros_like(x)
-    x = torch.cat((x, r), dim=1)
-    x = model.final_res_block(x, t_emb)
-    out = model.final_conv(x)
-    return out
+import numpy as np
 
 if __name__ == "__main__":
     model = Unet1D(
@@ -53,20 +19,31 @@ if __name__ == "__main__":
 
     device = next(model.parameters()).device
     seq_len = 400
-
-    # Sample two random noises
-    noise1 = torch.randn(1, 1, seq_len).to(device)
-    noise2 = torch.randn(1, 1, seq_len).to(device)
-    t = torch.zeros((1,), dtype=torch.long, device=device)
+    
 
     # Get bottleneck representations
-    h1 = get_bottleneck(model, noise1, t)
-    h2 = get_bottleneck(model, noise2, t)
-    h_sum = h1 + h2
+    sample1,h1 = diffusion.sample_with_h(batch_size=1)
+    
+    count = triangleInGraph((sample1[0] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
+    print("Number of triangles in first sample graph:", count)
+    num_edges = (sample1[0] > 0.5).sum().item()// 2
+    print("Number of edges in first sample graph:", num_edges)
+    
+    sample2,h2 = diffusion.sample_with_h(batch_size=1)
+    
+    count = triangleInGraph((sample2[0] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
+    print("Number of triangles in second sample graph:", count)
+    num_edges = (sample2[0] > 0.5).sum().item()// 2
+    print("Number of edges in second sample graph:", num_edges)
+    
+    h_sum =  [(h1[i] + h2[i]) for i in range(len(h1)) ]
 
     # Decode
     with torch.no_grad():
-        decoded = decode_from_bottleneck(model, h_sum, t)
+        decoded = diffusion.sample_from_h(
+            h=h_sum,
+            batch_size=1,
+        )
 
     print("Decoded graph shape:", decoded.shape)
     print("Decoded graph (first sample):", decoded[0])
