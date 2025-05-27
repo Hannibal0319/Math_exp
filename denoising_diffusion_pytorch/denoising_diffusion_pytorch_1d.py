@@ -346,7 +346,7 @@ class Unet1D(Module):
         self.final_res_block = resnet_block(init_dim * 2, init_dim)
         self.final_conv = nn.Conv1d(init_dim, self.out_dim, 1)
 
-    def forward(self, x, time, x_self_cond = None,return_h = False):
+    def forward(self, x, time, x_self_cond = None,return_h = False, inject_h=None):
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x_self_cond, x), dim = 1)
@@ -368,6 +368,12 @@ class Unet1D(Module):
 
             x = downsample(x)
 
+        
+        if inject_h is not None:
+            h = inject_h
+        
+        h_to_return = h.copy()
+        # mid block (bottleneck)
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
@@ -387,7 +393,7 @@ class Unet1D(Module):
         x = self.final_res_block(x, t)
         out = self.final_conv(x)
         if return_h:
-            return out, h
+            return out, h_to_return
         return out
 
 # gaussian diffusion trainer class
@@ -542,11 +548,17 @@ class GaussianDiffusion1D(Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False, return_h=False):
+    def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False, return_h=False,inject_h=None):
         if return_h:
-            model_output, h = self.model(x, t, x_self_cond, return_h=True)
+            if inject_h is not None:
+                model_output, h = self.model(x, t, x_self_cond, return_h=True, inject_h=inject_h)
+            else:
+                model_output, h = self.model(x, t, x_self_cond, return_h=True)
         else:
-            model_output = self.model(x, t, x_self_cond)
+            if inject_h is not None:
+                model_output = self.model(x, t, x_self_cond, inject_h=inject_h)
+            else:
+                model_output = self.model(x, t, x_self_cond)
             h = None
         maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
 
@@ -666,31 +678,30 @@ class GaussianDiffusion1D(Module):
         return img, h_spaces
     
     @torch.no_grad()
-    def p_sample_from_h(self, h, t: int, x_self_cond = None, clip_denoised = True):
-        b, *_, device = *h[0].shape, h[0].device
-        batched_times = torch.full((b,), t, device = device, dtype = torch.long)
-        x = h[-1]
-        for i in reversed(range(len(h) - 1)):
-            x = torch.cat((x, h[i]), dim = 1)
-            model_mean, _, model_log_variance, x_start = self.p_mean_variance(x = x, t = batched_times, x_self_cond = x_self_cond, clip_denoised = clip_denoised)
-            noise = torch.randn_like(x) if t > 0 else 0.
-            pred_img = model_mean + (0.5 * model_log_variance).exp() * noise
-        x_start = None
-        for i in tqdm(reversed(range(0, t)), desc = 'sampling loop time step', total = t):
-            self_cond = x_start if self.self_condition else None
-            pred_img, x_start = self.p_sample(pred_img, i, self_cond, clip_denoised)
-        return pred_img
-    
-    @torch.no_grad()
-    def sample_from_h(self, h, batch_size = 16):
-        """
-        Sample from the h-space of the model.
-        h is a list of hidden states from the model, where each element corresponds to a different time step.
-        """
+    def sample_given_h(self, h_spaces, batch_size=16):
         seq_length, channels = self.seq_length, self.channels
-        assert len(h) == self.num_timesteps, f'h must have length {self.num_timesteps}, got {len(h)}'
-        return self.p_sample_from_h(h, t = self.num_timesteps - 1, x_self_cond = None)
+        img = torch.randn((batch_size, channels, seq_length), device=self.betas.device)
+        x_start = None
 
+        for t, h in zip(reversed(range(0, self.num_timesteps)), h_spaces):
+            self_cond = x_start if self.self_condition else None
+            model_pred, _ = self.model_predictions(
+                img,
+                torch.full((batch_size,), t, device=img.device, dtype=torch.long),
+                self_cond,
+                inject_h=h
+            )
+            model_mean, _, model_log_variance, _ = self.p_mean_variance(
+                img,
+                torch.full((batch_size,), t, device=img.device, dtype=torch.long),
+                self_cond
+            )
+            noise = torch.randn_like(img) if t > 0 else 0.
+            img = model_mean + (0.5 * model_log_variance).exp() * noise
+
+        img = self.unnormalize(img)
+        return img
+    
     @torch.no_grad()
     def interpolate(self, x1, x2, t = None, lam = 0.5):
         b, *_, device = *x1.shape, x1.device
