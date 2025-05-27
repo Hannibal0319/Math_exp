@@ -35,9 +35,11 @@ if __name__ == "__main__":
     sample1,h1 = diffusion.sample_with_h(batch_size=batch_size)
     sample2,h2 = diffusion.sample_with_h(batch_size=batch_size)
     # Calculate the sum of bottleneck representations
-    print("Shape of h1 and h2:", len(h1),len(h1[0]),h1[0][0].shape, len(h2),len(h2[0]))
-
-    print("Shape of h1 and h2:", len(h1),len(h1[0]))
+    #print h1.shape, h2.shape
+    print("Shape of h1:", len(h1), h1[0].shape)
+    h_sum = h1.copy()
+    for i in range(1000):
+        h_sum[i] += torch.abs(h2[i]- h1[i]) * 2
     for i in range(batch_size):
         count1 = triangleInGraph((sample1[i] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
         count2 = triangleInGraph((sample2[i] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
@@ -45,14 +47,13 @@ if __name__ == "__main__":
         num_edges1 = (sample1[i] > 0.5).sum().item()// 2
         num_edges2 = (sample2[i] > 0.5).sum().item()// 2
         print("Number of edges in first and second sample graph:", num_edges1, num_edges2)    
-        
-        
+
         # Decode
         with torch.no_grad():
             decoded = diffusion.sample_given_h(
-                h_spaces=h_sum,
+                h_spaces=[x[i,:,:] for x in h_sum],
                 batch_size=1,
-            )
+        )
 
         e = (decoded[0] > 0.5).reshape(20, 20).cpu().numpy()
         count = triangleInGraph(e, V=20)

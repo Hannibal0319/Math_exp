@@ -370,9 +370,9 @@ class Unet1D(Module):
 
         
         if inject_h is not None:
-            h = inject_h
+            x = inject_h
         
-        h_to_return = h.copy()
+        h_to_return = x
         # mid block (bottleneck)
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
