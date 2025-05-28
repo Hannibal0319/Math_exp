@@ -683,7 +683,7 @@ class GaussianDiffusion1D(Module):
         img = torch.randn((batch_size, channels, seq_length), device=self.betas.device)
         x_start = None
 
-        for t, h in zip(reversed(range(0, self.num_timesteps)), h_spaces):
+        for t, h in tqdm(zip(reversed(range(0, self.num_timesteps)), h_spaces), desc='sampling loop time step', total=self.num_timesteps):
             self_cond = x_start if self.self_condition else None
             model_pred, _ = self.model_predictions(
                 img,

@@ -3,6 +3,7 @@ from denoising_diffusion_pytorch import Unet1D,GaussianDiffusion1D
 from count_triangles import triangleInGraph
 import numpy as np
 from tqdm import tqdm
+import time
 
 def parse_args():
     import argparse
@@ -36,26 +37,47 @@ if __name__ == "__main__":
     sample2,h2 = diffusion.sample_with_h(batch_size=batch_size)
     # Calculate the sum of bottleneck representations
     #print h1.shape, h2.shape
-    print("Shape of h1:", len(h1), h1[0].shape)
     h_sum = h1.copy()
     for i in range(1000):
-        h_sum[i] += torch.abs(h2[i]- h1[i]) * 2
+        h_sum[i] += torch.abs(h2[i]- h1[i]) * 20
+    
+    start_time = time.time()
     for i in range(batch_size):
+        print(f"{i}/{batch_size}")
         count1 = triangleInGraph((sample1[i] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
         count2 = triangleInGraph((sample2[i] > 0.5).reshape(20, 20).cpu().numpy(), V=20)
-        print("Number of triangles in first and second sample graph:", count1, count2)
+        print("Num triangles of sample:", count1, count2)
         num_edges1 = (sample1[i] > 0.5).sum().item()// 2
         num_edges2 = (sample2[i] > 0.5).sum().item()// 2
-        print("Number of edges in first and second sample graph:", num_edges1, num_edges2)    
+        print("Num edges of sample:", num_edges1, num_edges2)    
 
         # Decode
         with torch.no_grad():
             decoded = diffusion.sample_given_h(
                 h_spaces=[x[i,:,:] for x in h_sum],
                 batch_size=1,
-        )
+            )
 
         e = (decoded[0] > 0.5).reshape(20, 20).cpu().numpy()
-        count = triangleInGraph(e, V=20)
-        print("Number of triangles in summed bottleneck h-space graph:", count)
-        print("Number of edges in summed bottleneck h-space graph:", e.sum().item()// 2)
+        count_h = triangleInGraph(e, V=20)
+        print("Num triangles of created:", count_h)
+        num_edges_h = e.sum().item() // 2
+        print("Num edges of created:", num_edges_h)
+        if (num_edges2 > num_edges1 and num_edges_h > num_edges2) or (num_edges1 > num_edges2 and num_edges_h > num_edges1):
+            print("Found a better sample!")
+            print("Creating an even better sample...")
+            with torch.no_grad():
+                decoded = diffusion.sample_given_h(
+                    h_spaces=[x[i,:,:]+(x[i,:,:]-y[i,:,:])*20 for x,y in zip(h_sum,h2)],
+                    batch_size=1,
+                )
+            e = (decoded[0] > 0.5).reshape(20, 20).cpu().numpy()
+            count_h = triangleInGraph(e, V=20)
+            num_edges_h = e.sum().item() // 2
+            print("Num triangles of created:", count_h)
+            print("Num edges of created:", num_edges_h)
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time:.2f} seconds")
+    print("which is ", (end_time - start_time) / batch_size, "seconds per sample")
+    print("Done!")
+            
