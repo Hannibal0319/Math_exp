@@ -14,6 +14,8 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    print("CUDA available:", torch.cuda.is_available())
+    print("Using device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
     args = parse_args()
     model_path = args.model_path
     batch_size = args.batch_size
@@ -39,7 +41,7 @@ if __name__ == "__main__":
     #print h1.shape, h2.shape
     h_sum = h1.copy()
     for i in range(1000):
-        h_sum[i] += torch.abs(h2[i]- h1[i]) * 20
+        h_sum[i] += torch.abs(h2[i]- h1[i]) * 2
     
     start_time = time.time()
     for i in range(batch_size):
@@ -68,7 +70,7 @@ if __name__ == "__main__":
             print("Creating an even better sample...")
             with torch.no_grad():
                 decoded = diffusion.sample_given_h(
-                    h_spaces=[x[i,:,:]+(x[i,:,:]-y[i,:,:])*20 for x,y in zip(h_sum,h2)],
+                    h_spaces=[x[i,:,:]+(x[i,:,:]-y[i,:,:])*2 for x,y in zip(h_sum,h2)],
                     batch_size=1,
                 )
             e = (decoded[0] > 0.5).reshape(20, 20).cpu().numpy()

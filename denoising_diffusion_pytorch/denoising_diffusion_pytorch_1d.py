@@ -372,11 +372,12 @@ class Unet1D(Module):
         if inject_h is not None:
             x = inject_h
         
-        h_to_return = x
         # mid block (bottleneck)
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
+        h_to_return = x
+
 
         for block1, block2, attn, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim = 1)
