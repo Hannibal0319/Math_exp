@@ -1,6 +1,6 @@
 import torch
 from denoising_diffusion_pytorch import Unet1D, GaussianDiffusion1D, Trainer1D, Dataset1D
-from make_graphs_no_triangle import load_graphs
+from triangle_free_graphs.make_graphs_no_triangle import load_graphs
 import numpy as np
 from pprint import pprint
 

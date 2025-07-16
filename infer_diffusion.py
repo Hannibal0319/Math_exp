@@ -1,6 +1,6 @@
 import torch
 from denoising_diffusion_pytorch import GaussianDiffusion1D, Unet1D
-from count_triangles import count_triangles,triangleInGraph
+from checkers.count_triangles import count_triangles,triangleInGraph
 
 def parse_args():
     import argparse
